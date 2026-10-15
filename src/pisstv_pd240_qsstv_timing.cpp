@@ -90,21 +90,6 @@ static void append_vis_header(std::vector<float>& out, int vis) {
     append_tone(out, 1200, 300000);     // 30 ms stop
 }
 
-static void append_avt_start_header(std::vector<float>& out, unsigned mode_code) {
-    // AVT's digital synchronization header consists of 32 frames. Every
-    // frame has a 1900 Hz start pulse, then mode/count and its inverted byte.
-    // The count runs 0..31 so a receiver can lock at any frame and wait out
-    // the remaining WORDTIME intervals before the synchronous image starts.
-    constexpr uint32_t bit_time = 97625; // 5.3108 / 32 / 17 seconds, in 0.1 us units
-    for (unsigned count = 0; count < 32; ++count) {
-        append_tone(out, 1900, bit_time); // one start bit per frame
-        const uint8_t first = static_cast<uint8_t>(((mode_code & 7U) << 5) | count);
-        const uint16_t word = static_cast<uint16_t>((first << 8) | (first ^ 0xffU));
-        for (int bit = 15; bit >= 0; --bit)
-            append_tone(out, (word >> bit) & 1 ? 2300 : 1500, bit_time);
-    }
-}
-
 static void append_extended_vis_header(std::vector<float>& out, uint32_t vis) {
     const int calibration[] = {1900, 1500, 1900, 1500, 2300, 1500, 2300, 1500};
     for (int hz : calibration) append_tone(out, hz, 1000000);
@@ -760,36 +745,6 @@ static bool build_mp(int fd, size_t rows, std::vector<float>& samples,
     return running;
 }
 
-static bool build_avt(int fd, size_t width, size_t rows,
-                      std::vector<float>& samples, uint64_t total_image_time,
-                      uint32_t vis) {
-    std::vector<unsigned char> rgb(width * 3);
-    samples.reserve(static_cast<size_t>(total_image_time * sample_rate / 10000000ULL) + 500000);
-    append_vis_header(samples, vis);
-    sample_remainder = 0;
-    const unsigned mode_code = vis == 0xC0 ? 2 : vis == 0x44 ? 5 : 3;
-    append_avt_start_header(samples, mode_code);
-    sample_remainder = 0;
-    uint64_t line_remainder = 0;
-    for (size_t y = 0; y < rows && running; ++y) {
-        if (!read_rgb_row(fd, rgb)) return false;
-        const uint64_t line_total = line_remainder + total_image_time;
-        const uint32_t line_time = static_cast<uint32_t>(line_total / rows);
-        line_remainder = line_total % rows;
-        // AVT is synchronously timed and has no per-line sync or blanking:
-        // each RGB component occupies exactly one third of the line period.
-        const uint32_t scan_base = line_time / 3;
-        const uint32_t scan_rem = line_time % 3;
-        const uint32_t red_time = scan_base + (scan_rem > 0);
-        const uint32_t green_time = scan_base + (scan_rem > 1);
-        const uint32_t blue_time = scan_base;
-        append_rgb_scan(samples, rgb, 0, red_time, width);
-        append_rgb_scan(samples, rgb, 1, green_time, width);
-        append_rgb_scan(samples, rgb, 2, blue_time, width);
-    }
-    return running;
-}
-
 static bool build_fax480(int fd, std::vector<float>& samples) {
     constexpr size_t width = 512;
     constexpr size_t rows = 500;
@@ -884,7 +839,7 @@ int main(int argc, char **argv) {
     }
     if (argc != 3 && argc != 4) {
         std::fprintf(stderr,
-            "usage: pisstv image.rgb frequency_hz [M1|M2|S1|S2|DX|SC2-60|SC2-120|SC2-180|P3|P5|P7|MP73|MP115|MP140|MP175|MR73|MR90|MR115|MR140|MR175|ML180|ML240|ML280|ML320|AVT24|AVT90|AVT94|ROBOT8|ROBOT24|ROBOT36|ROBOT72|BW12|FAX480|PD50|PD90|PD120|PD160|PD180|PD240|PD290]\n"
+            "usage: pisstv image.rgb frequency_hz [M1|M2|S1|S2|DX|SC2-60|SC2-120|SC2-180|P3|P5|P7|MP73|MP115|MP140|MP175|MR73|MR90|MR115|MR140|MR175|ML180|ML240|ML280|ML320|ROBOT8|ROBOT24|ROBOT36|ROBOT72|BW12|FAX480|PD50|PD90|PD120|PD160|PD180|PD240|PD290]\n"
             "       pisstv --baseband-zero frequency_hz  (10-second center carrier)\n"
             "  M1  Martin M1   VIS 44 (0x2C)\n"
             "  M2  Martin M2   VIS 40 (0x28)\n"
@@ -895,7 +850,6 @@ int main(int argc, char **argv) {
             "  P3/P5  Pasokon RGB, VIS 0x71/0x72, 640x496\n"
             "  P7      Pasokon P7, VIS 243 (0xF3), 640x496\n"
             "  MP/MR/ML modes  Robot2 Y/R-Y/B-Y, extended 16-bit VIS\n"
-            "  AVT24/90/94  AVT RGB, VIS 0xC0/0x44/0x48, 128x120 / 320x240 / 320x200\n"
             "  ROBOT8  B/W 8  VIS 2 (0x02), 160x120\n"
             "  ROBOT24 Robot 24 VIS 4 (0x04), 160x120\n"
             "  ROBOT36 Robot 36 VIS 8 (0x08), 320x240\n"
@@ -922,7 +876,6 @@ int main(int argc, char **argv) {
         std::strcmp(mode, "MP73") && std::strcmp(mode, "MP115") && std::strcmp(mode, "MP140") && std::strcmp(mode, "MP175") &&
         std::strcmp(mode, "MR73") && std::strcmp(mode, "MR90") && std::strcmp(mode, "MR115") && std::strcmp(mode, "MR140") && std::strcmp(mode, "MR175") &&
         std::strcmp(mode, "ML180") && std::strcmp(mode, "ML240") && std::strcmp(mode, "ML280") && std::strcmp(mode, "ML320") &&
-        std::strcmp(mode, "AVT24") && std::strcmp(mode, "AVT90") && std::strcmp(mode, "AVT94") &&
         std::strcmp(mode, "ROBOT8") && std::strcmp(mode, "ROBOT24") &&
         std::strcmp(mode, "ROBOT36") &&
         std::strcmp(mode, "ROBOT72") && std::strcmp(mode, "BW12") && std::strcmp(mode, "FAX480") &&
@@ -956,13 +909,12 @@ int main(int argc, char **argv) {
     const bool is_p5 = !std::strcmp(mode, "P5");
     const bool is_p7 = !std::strcmp(mode, "P7");
     const bool is_mp = !std::strcmp(mode, "MP73") || !std::strcmp(mode, "MP115") || !std::strcmp(mode, "MP140") || !std::strcmp(mode, "MP175");
-    const bool is_avt = !std::strcmp(mode, "AVT24") || !std::strcmp(mode, "AVT90") || !std::strcmp(mode, "AVT94");
     const bool is_mr = !std::strcmp(mode, "MR73") || !std::strcmp(mode, "MR90") || !std::strcmp(mode, "MR115") || !std::strcmp(mode, "MR140") || !std::strcmp(mode, "MR175");
     const bool is_ml = !std::strcmp(mode, "ML180") || !std::strcmp(mode, "ML240") || !std::strcmp(mode, "ML280") || !std::strcmp(mode, "ML320");
     const bool is_robot2 = is_mr || is_ml;
     const bool is_pd120 = !std::strcmp(mode, "PD120");
-    const size_t width = (is_avt && !std::strcmp(mode, "AVT24")) ? 128 : is_robot8 || is_robot24 || is_bw12 ? 160 : is_pd290 ? 800 : is_pd160 || is_fax480 ? 512 : (is_pd120 || is_pd180 || is_pd240 || is_p3 || is_p5 || is_p7 || is_ml) ? 640 : 320;
-    const size_t expected_rows = is_fax480 ? 500 : (is_robot8 || is_robot24 || is_bw12 || (is_avt && !std::strcmp(mode, "AVT24")) ? 120 : is_robot36 || is_robot72 || (is_avt && !std::strcmp(mode, "AVT90")) ? 240 : (is_avt && !std::strcmp(mode, "AVT94")) ? 200 : is_pd290 ? 616 : is_pd160 ? 400 : (is_pd120 || is_pd180 || is_pd240 || is_p3 || is_p5 || is_p7 || is_ml) ? 496 : 256);
+    const size_t width = is_robot8 || is_robot24 || is_bw12 ? 160 : is_pd290 ? 800 : is_pd160 || is_fax480 ? 512 : (is_pd120 || is_pd180 || is_pd240 || is_p3 || is_p5 || is_p7 || is_ml) ? 640 : 320;
+    const size_t expected_rows = is_fax480 ? 500 : (is_robot8 || is_robot24 || is_bw12) ? 120 : is_robot36 || is_robot72 ? 240 : is_pd290 ? 616 : is_pd160 ? 400 : (is_pd120 || is_pd180 || is_pd240 || is_p3 || is_p5 || is_p7 || is_ml) ? 496 : 256;
     int fd = open(argv[1], O_RDONLY);
     if (fd < 0) { std::perror("open image"); return 1; }
     struct stat st{};
@@ -982,7 +934,6 @@ int main(int argc, char **argv) {
     const int vis = is_fax480 ? 0 : is_mp ? (!std::strcmp(mode, "MP73") ? 0x2523 : !std::strcmp(mode, "MP115") ? 0x2923 : !std::strcmp(mode, "MP140") ? 0x2A23 : 0x2C23) :
                     is_mr ? (!std::strcmp(mode, "MR73") ? 0x4523 : !std::strcmp(mode, "MR90") ? 0x4623 : !std::strcmp(mode, "MR115") ? 0x4923 : 0x4A23) :
                     is_ml ? (!std::strcmp(mode, "ML180") ? 0x8523 : !std::strcmp(mode, "ML240") ? 0x8623 : !std::strcmp(mode, "ML280") ? 0x8923 : 0x8A23) :
-                    is_avt ? (!std::strcmp(mode, "AVT24") ? 0xC0 : !std::strcmp(mode, "AVT90") ? 0x44 : 0x48) :
                     is_martin ? 44 : is_martin2 ? 40 : is_robot24 ? 0x84 : is_bw12 ? 6 :
                     !std::strcmp(mode, "SC2-60") ? 0xBB : !std::strcmp(mode, "SC2-120") ? 0x3F : !std::strcmp(mode, "SC2-180") ? 0xB7 :
                     !std::strcmp(mode, "S1") ? 60 :
@@ -995,7 +946,7 @@ int main(int argc, char **argv) {
                                 !std::strcmp(mode, "SC2-180") ? 182.03850 / 256.0 : 0.0;
     const uint32_t sc2_scan_time = static_cast<uint32_t>((line_seconds - 0.005) * 10000000.0 / 3.0);
     const char *mode_name = is_martin ? "Martin M1" : is_martin2 ? "Martin M2" : is_robot24 ? "Robot 24" : is_bw12 ? "B/W 12" :
-        is_mp || is_robot2 || is_avt || is_fax480 ? mode : is_sc2 ? mode : !std::strcmp(mode, "S1") ? "Scottie S1" :
+        is_mp || is_robot2 || is_fax480 ? mode : is_sc2 ? mode : !std::strcmp(mode, "S1") ? "Scottie S1" :
         !std::strcmp(mode, "S2") ? "Scottie S2" : !std::strcmp(mode, "DX") ? "Scottie DX" :
         is_robot8 ? "Robot B/W 8" : is_robot36 ? "Robot 36" : is_robot72 ? "Robot 72" : is_pd50 ? "PD 50" : is_pd90 ? "PD 90" : is_pd160 ? "PD 160" : is_pd180 ? "PD 180" : is_pd240 ? "PD 240" : is_pd290 ? "PD 290" : is_p3 ? "Pasokon P3" : is_p5 ? "Pasokon P5" : is_p7 ? "Pasokon P7" : "PD 120";
     std::fprintf(stderr, "%s (VIS %d / 0x%02X): %zux%zu at %.0f Hz\n",
@@ -1053,17 +1004,6 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
-    std::vector<float> avt_samples;
-    if (is_avt) {
-        const uint64_t image_time = !std::strcmp(mode, "AVT24") ? 225016000ULL :
-                                    !std::strcmp(mode, "AVT90") ? 900045000ULL : 937500000ULL;
-        std::fprintf(stderr, "Preparing continuous %s frame before RF start\n", mode);
-        if (!build_avt(fd, width, rows, avt_samples, image_time, static_cast<uint32_t>(vis))) {
-            std::fprintf(stderr, "%s frame preparation failed\n", mode);
-            close(fd);
-            return 1;
-        }
-    }
     std::vector<float> fax_samples;
     if (is_fax480) {
         std::fprintf(stderr, "Preparing continuous FAX480 frame before RF start\n");
@@ -1102,9 +1042,6 @@ int main(int argc, char **argv) {
     bool ok;
     if (is_fax480) {
         ok = send_fax480(fax_samples);
-    } else if (is_avt) {
-        send(avt_samples);
-        ok = running;
     } else if (is_mp) {
         send(mp_samples);
         ok = running;

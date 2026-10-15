@@ -74,6 +74,10 @@ használd.
 
 ## Módok
 
+**Az AVT-eltávolítás és a javítások után készült új bináris teljes, 37 módos
+validációja még nem történt meg.** A korábbi módonkénti eredmények nem
+helyettesítik az új bináris ellenőrzését.
+
 - [Módok és validációs állapot](docs/MODES.md)
 - [Rövid validációs eredmény](docs/VALIDATION-SUMMARY.md)
 - [Használati útmutató](docs/USAGE.md)
