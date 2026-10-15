@@ -1,13 +1,21 @@
 # SSTV módok
 
-Az aktuális adóforrás és képelőkészítő 37 módot kezel. A „validált” módokat
-sikeresen dekódolták SSTV-vevővel. Az első teljes validáció történeti köre még
-40 módot tartalmazott; az AVT24/90/94 azóta a felhasználói döntés alapján
-kikerült a forrásból. Lásd: [AVT-eltávolítási feljegyzés](AVT-REMOVAL.md).
+Az aktuális `main` adóforrás és képelőkészítő 37 módot kezel. Az AVT24/90/94
+az AVT-eltávolítási feljegyzés szerint kikerült a forrásból.
 
-**Az AVT-eltávolítás és a javítások után készült új bináris teljes, 37 módos
-validációja még nem történt meg.** A korábbi módonkénti eredmények nem
-helyettesítik az új bináris ellenőrzését.
+## Mostani állapot — 2026-10-15
+
+- A `main` commitja: `611d419`. Az AVT24/90/94 ki van véve.
+- A PD160 javítása nincs a `main`-ben: a külön próbált változat az egész
+  képet az adás előtt állítja elő, nem sorpáronként dolgozik.
+- A FAX480 javítása sincs a `main`-ben: a külön próbált változat 1200 Hz-es
+  sor-szinkront és normál adásvég után 250 ms várakozást használ.
+- Mindkét változás egy külön próbaágban van. Annak forráshashe:
+  `3f3e373904bc708049928b83e32bf83946cc644e47340447a8267324091ad060`.
+  ARMv6 objektum lefordult; futtatható Pi-bináris még nincs.
+- Az új, javított binárissal mind a 37 mód adásos ellenőrzése még hátravan.
+  A korábbi külön próbák ezt nem helyettesítik. A telepített binárist nem
+  változtattam meg.
 
 Az adóoldali próbákat Raspberry Pi 2 Model B+ hardveren végeztük.
 Az adásokat Gqrx → QSSTV vételi láncon ellenőriztük, a QSSTV Auto Slant

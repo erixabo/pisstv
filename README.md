@@ -74,9 +74,10 @@ használd.
 
 ## Módok
 
-**Az AVT-eltávolítás és a javítások után készült új bináris teljes, 37 módos
-validációja még nem történt meg.** A korábbi módonkénti eredmények nem
-helyettesítik az új bináris ellenőrzését.
+**Állapot 2026-10-15:** a `main` 37 módot tartalmaz, az AVT-k nélkül. A
+PD160- és FAX480-javítások még nincsenek benne; a külön próbált javításokat
+és az ellenőrzés állapotát a [módlista](docs/MODES.md) írja le. A javított
+37 mód teljes adásos validációja még nem történt meg.
 
 - [Módok és validációs állapot](docs/MODES.md)
 - [Rövid validációs eredmény](docs/VALIDATION-SUMMARY.md)
